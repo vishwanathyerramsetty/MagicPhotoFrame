@@ -1,0 +1,1663 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+      content="width=device-width,
+               initial-scale=1.0,
+               viewport-fit=cover">
+
+<title>Magic Photo Frame</title>
+
+<script async
+        src="https://docs.opencv.org/4.x/opencv.js">
+</script>
+
+<style>
+
+/* =========================================================
+   BASIC PAGE
+   ========================================================= */
+
+*{
+    box-sizing:border-box;
+}
+
+html,
+body{
+    margin:0;
+    padding:0;
+    width:100%;
+    min-height:100%;
+
+    background:#111;
+    color:#fff;
+
+    font-family:Arial,sans-serif;
+    text-align:center;
+}
+
+h1{
+    margin:14px 0 8px;
+    font-size:23px;
+}
+
+
+/* =========================================================
+   CAMERA
+   ========================================================= */
+
+#camera{
+    width:100%;
+    max-width:700px;
+    height:auto;
+
+    display:block;
+    margin:0 auto;
+
+    background:#000;
+}
+
+#canvas{
+    display:none;
+}
+
+
+/* =========================================================
+   STATUS
+   ========================================================= */
+
+#status{
+    margin:10px 12px;
+    min-height:28px;
+
+    font-size:17px;
+}
+
+
+/* =========================================================
+   START BUTTON
+   ========================================================= */
+
+#startButton{
+
+    padding:14px 24px;
+
+    font-size:18px;
+
+    border:0;
+    border-radius:9px;
+
+    cursor:pointer;
+}
+
+#startButton:disabled{
+    opacity:.5;
+}
+
+
+/* =========================================================
+   FULL SCREEN VIDEO
+   ========================================================= */
+
+#videoContainer{
+
+    display:none;
+
+    position:fixed;
+
+    inset:0;
+
+    width:100%;
+    height:100%;
+
+    background:#000;
+
+    z-index:100;
+
+    align-items:center;
+    justify-content:center;
+}
+
+
+/* =========================================================
+   VIDEO PLAYER
+   ========================================================= */
+
+#videoPlayer{
+
+    width:100%;
+    height:100%;
+
+    object-fit:contain;
+
+    background:#000;
+}
+
+
+/* =========================================================
+   CLOSE BUTTON
+   ========================================================= */
+
+#closeVideo{
+
+    position:absolute;
+
+    top:max(18px,env(safe-area-inset-top));
+
+    right:18px;
+
+    z-index:200;
+
+    min-width:90px;
+    height:55px;
+
+    padding:0 18px;
+
+    border:2px solid #fff;
+
+    border-radius:12px;
+
+    background:rgba(0,0,0,0.80);
+
+    color:#fff;
+
+    font-size:20px;
+
+    font-weight:bold;
+
+    cursor:pointer;
+
+    box-shadow:
+        0 3px 10px rgba(0,0,0,.7);
+
+    display:flex;
+
+    align-items:center;
+    justify-content:center;
+
+}
+
+
+/* =========================================================
+   CLOSE BUTTON PRESS
+   ========================================================= */
+
+#closeVideo:active{
+
+    transform:scale(.94);
+
+    background:#333;
+
+}
+
+
+/* =========================================================
+   SOUND PANEL
+   ========================================================= */
+
+#soundPanel{
+
+    display:none;
+
+    position:absolute;
+
+    left:0;
+    right:0;
+
+    bottom:
+        max(30px,
+        env(safe-area-inset-bottom));
+
+    z-index:201;
+}
+
+
+#playSoundButton{
+
+    padding:14px 24px;
+
+    font-size:18px;
+
+    border:0;
+
+    border-radius:9px;
+
+    background:#fff;
+
+    color:#000;
+
+    font-weight:bold;
+
+    cursor:pointer;
+
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+
+<!-- =====================================================
+     TITLE
+     ===================================================== -->
+
+<h1>
+    MAGIC PHOTO FRAME
+</h1>
+
+
+<!-- =====================================================
+     START SCANNER
+     ===================================================== -->
+
+<button id="startButton"
+        onclick="startScanner()"
+        disabled>
+
+    LOADING...
+
+</button>
+
+
+<!-- =====================================================
+     CAMERA
+     ===================================================== -->
+
+<video id="camera"
+       autoplay
+       playsinline
+       muted>
+</video>
+
+
+<canvas id="canvas"></canvas>
+
+
+<!-- =====================================================
+     STATUS
+     ===================================================== -->
+
+<div id="status">
+
+    Loading OpenCV...
+
+</div>
+
+
+<!-- =====================================================
+     VIDEO SCREEN
+     ===================================================== -->
+
+<div id="videoContainer">
+
+
+    <!-- ===============================================
+         CLOSE VIDEO BUTTON
+         =============================================== -->
+
+    <button id="closeVideo"
+            onclick="closeVideo()">
+
+        ✕ CLOSE
+
+    </button>
+
+
+    <!-- ===============================================
+         VIDEO
+         =============================================== -->
+
+    <video id="videoPlayer"
+           controls
+           playsinline
+           preload="metadata">
+    </video>
+
+
+    <!-- ===============================================
+         SOUND BUTTON
+         =============================================== -->
+
+    <div id="soundPanel">
+
+        <button id="playSoundButton"
+                onclick="enableSound()">
+
+            🔊 TAP FOR SOUND
+
+        </button>
+
+    </div>
+
+
+</div>
+
+
+<script>
+
+/* =========================================================
+   GITHUB VIDEO LOCATION
+   ========================================================= */
+
+const GITHUB_BASE = new URL("./", window.location.href).href;
+
+
+/* =========================================================
+   NUMBER OF PHOTOS
+   This project contains 13 reference photos and 13 videos.
+   ========================================================= */
+
+const TOTAL_PHOTOS = 13;
+
+
+/* =========================================================
+   CREATE PHOTO / VIDEO LIST
+   ========================================================= */
+
+const photoVideos =
+Array.from(
+    {length:TOTAL_PHOTOS},
+    (_,i)=>{
+
+        const n =
+            String(i+1).padStart(3,"0");
+
+        return {
+
+            id:
+                "PHOTO_"+n,
+
+            image:
+                "photos/PHOTO_"+n+".jpg",
+
+            video:
+                GITHUB_BASE+
+                "PHOTO_"+n+".mp4"
+
+        };
+
+    }
+);
+
+
+/* =========================================================
+   PAGE ELEMENTS
+   ========================================================= */
+
+let camera;
+let canvas;
+let context;
+
+let statusText;
+let startButton;
+
+let videoContainer;
+let videoPlayer;
+let soundPanel;
+
+
+/* =========================================================
+   OPENCV
+   ========================================================= */
+
+let referencePhotos=[];
+
+let liveOrb=null;
+
+
+/* =========================================================
+   SCANNER STATE
+   ========================================================= */
+
+let scannerRunning=false;
+
+let videoPlaying=false;
+
+
+/* =========================================================
+   DETECTION STATE
+   ========================================================= */
+
+let lastDetectionTime=0;
+
+let lastScanTime=0;
+
+let candidateId=null;
+
+let candidateCount=0;
+
+
+/* =========================================================
+   RECOGNITION SETTINGS
+   ========================================================= */
+
+/*
+   Number of good ORB matches required.
+*/
+
+const REQUIRED_MATCHES = 22;
+
+
+/*
+   Number of consecutive successful
+   scans required.
+
+   2 = faster than your original 3.
+*/
+
+const REQUIRED_CONFIRMATIONS = 2;
+
+
+/*
+   Scan every 150 milliseconds.
+*/
+
+const SCAN_INTERVAL = 150;
+
+
+/*
+   Lowe's ratio test.
+*/
+
+const MATCH_RATIO = 0.70;
+
+
+/*
+   Prevent immediate repeated recognition.
+*/
+
+const DETECTION_COOLDOWN = 4000;
+
+
+/* =========================================================
+   OPENCV READY
+   ========================================================= */
+
+function onOpenCvReady(){
+
+    statusText.innerText =
+        "OpenCV ready. Press START SCANNER.";
+
+    startButton.disabled=false;
+
+    startButton.innerText =
+        "START SCANNER";
+
+}
+
+
+/* =========================================================
+   LOAD ONE REFERENCE PHOTO
+   ========================================================= */
+
+async function loadReferencePhoto(photo){
+
+    return new Promise(
+        (resolve,reject)=>{
+
+            const img =
+                new Image();
+
+
+            img.onload=function(){
+
+                try{
+
+                    /*
+                       Use 480px reference width
+                       for faster processing.
+                    */
+
+                    const targetWidth=480;
+
+                    const scale =
+                        targetWidth/
+                        img.width;
+
+
+                    const refCanvas =
+                        document.createElement(
+                            "canvas"
+                        );
+
+
+                    refCanvas.width =
+                        targetWidth;
+
+
+                    refCanvas.height =
+                        Math.round(
+                            img.height*scale
+                        );
+
+
+                    const ctx =
+                        refCanvas.getContext(
+                            "2d"
+                        );
+
+
+                    ctx.drawImage(
+
+                        img,
+
+                        0,
+                        0,
+
+                        refCanvas.width,
+                        refCanvas.height
+
+                    );
+
+
+                    /*
+                       Convert to OpenCV.
+                    */
+
+                    const mat =
+                        cv.imread(
+                            refCanvas
+                        );
+
+
+                    const gray =
+                        new cv.Mat();
+
+
+                    cv.cvtColor(
+
+                        mat,
+
+                        gray,
+
+                        cv.COLOR_RGBA2GRAY
+
+                    );
+
+
+                    /*
+                       ORB detector.
+                    */
+
+                    const orb =
+                        new cv.ORB(600);
+
+
+                    const keypoints =
+                        new cv.KeyPointVector();
+
+
+                    const descriptors =
+                        new cv.Mat();
+
+
+                    orb.detectAndCompute(
+
+                        gray,
+
+                        new cv.Mat(),
+
+                        keypoints,
+
+                        descriptors
+
+                    );
+
+
+                    /*
+                       Store descriptors.
+                    */
+
+                    referencePhotos.push({
+
+                        id:
+                            photo.id,
+
+                        video:
+                            photo.video,
+
+                        descriptors:
+                            descriptors.clone()
+
+                    });
+
+
+                    /*
+                       Release memory.
+                    */
+
+                    mat.delete();
+
+                    gray.delete();
+
+                    orb.delete();
+
+                    keypoints.delete();
+
+                    descriptors.delete();
+
+
+                    resolve();
+
+                }
+                catch(error){
+
+                    reject(error);
+
+                }
+
+            };
+
+
+            img.onerror=function(){
+
+                reject(
+                    new Error(
+                        "Cannot load "+
+                        photo.image
+                    )
+                );
+
+            };
+
+
+            img.src=photo.image;
+
+        }
+    );
+
+}
+
+
+/* =========================================================
+   LOAD ALL REFERENCE PHOTOS
+   ========================================================= */
+
+async function loadReferencePhotos(){
+
+    statusText.innerText =
+        "Loading reference photos...";
+
+
+    referencePhotos=[];
+
+
+    for(
+        const photo of photoVideos
+    ){
+
+        await loadReferencePhoto(
+            photo
+        );
+
+    }
+
+
+    statusText.innerText =
+        "Ready. Point camera at PHOTO.";
+
+}
+
+
+/* =========================================================
+   START SCANNER
+   ========================================================= */
+
+async function startScanner(){
+
+    /*
+       Don't start if already running.
+    */
+
+    if(
+        scannerRunning ||
+        videoPlaying
+    ){
+
+        return;
+
+    }
+
+
+    /*
+       Check OpenCV.
+    */
+
+    if(
+        typeof cv==="undefined" ||
+        !cv.Mat
+    ){
+
+        statusText.innerText =
+            "Please wait for OpenCV to finish loading.";
+
+        return;
+
+    }
+
+
+    try{
+
+        startButton.disabled=true;
+
+
+        statusText.innerText =
+            "Starting rear camera...";
+
+
+        /*
+           Open rear camera.
+        */
+
+        const stream =
+            await navigator.mediaDevices
+            .getUserMedia({
+
+                video:{
+
+                    facingMode:{
+                        ideal:"environment"
+                    },
+
+                    width:{
+                        ideal:1280
+                    },
+
+                    height:{
+                        ideal:720
+                    }
+
+                },
+
+                audio:false
+
+            });
+
+
+        camera.srcObject =
+            stream;
+
+
+        await camera.play();
+
+
+        /*
+           Reset candidate.
+        */
+
+        candidateId=null;
+
+        candidateCount=0;
+
+
+        /*
+           Load reference images only once.
+        */
+
+        if(
+            referencePhotos.length===0
+        ){
+
+            await loadReferencePhotos();
+
+        }
+
+
+        /*
+           Create ORB once.
+        */
+
+        if(!liveOrb){
+
+            liveOrb =
+                new cv.ORB(600);
+
+        }
+
+
+        scannerRunning=true;
+
+
+        startButton.innerText =
+            "SCANNING...";
+
+
+        statusText.innerText =
+            "Scanning... Point camera at a PHOTO.";
+
+
+        lastScanTime=0;
+
+
+        requestAnimationFrame(
+            scanFrame
+        );
+
+    }
+    catch(error){
+
+        console.error(error);
+
+
+        scannerRunning=false;
+
+
+        startButton.disabled=false;
+
+        startButton.innerText =
+            "START SCANNER";
+
+
+        if(
+            error.name===
+            "NotAllowedError"
+        ){
+
+            statusText.innerText =
+                "Camera permission denied. Allow Camera and try again.";
+
+        }
+
+        else if(
+            error.name===
+            "NotFoundError"
+        ){
+
+            statusText.innerText =
+                "No camera found on this phone.";
+
+        }
+
+        else{
+
+            statusText.innerText =
+                "Camera error: "+
+                error.message;
+
+        }
+
+    }
+
+}
+
+
+/* =========================================================
+   SCAN CAMERA FRAME
+   ========================================================= */
+
+function scanFrame(timestamp){
+
+    /*
+       Stop when video is playing.
+    */
+
+    if(
+        !scannerRunning ||
+        videoPlaying
+    ){
+
+        return;
+
+    }
+
+
+    /*
+       Limit scan frequency.
+    */
+
+    if(
+        timestamp-lastScanTime<
+        SCAN_INTERVAL
+    ){
+
+        requestAnimationFrame(
+            scanFrame
+        );
+
+        return;
+
+    }
+
+
+    lastScanTime=timestamp;
+
+
+    try{
+
+        const width =
+            camera.videoWidth;
+
+
+        const height =
+            camera.videoHeight;
+
+
+        if(
+            !width ||
+            !height
+        ){
+
+            requestAnimationFrame(
+                scanFrame
+            );
+
+            return;
+
+        }
+
+
+        /* ==============================================
+           REDUCE CAMERA FRAME TO 480px
+
+           This makes recognition faster.
+           ============================================== */
+
+        const scanWidth=480;
+
+
+        canvas.width=
+            scanWidth;
+
+
+        canvas.height=
+            Math.round(
+                height*
+                (scanWidth/width)
+            );
+
+
+        context.drawImage(
+
+            camera,
+
+            0,
+            0,
+
+            canvas.width,
+            canvas.height
+
+        );
+
+
+        /* ==============================================
+           OPENCV FRAME
+           ============================================== */
+
+        const frame =
+            cv.imread(canvas);
+
+
+        const gray =
+            new cv.Mat();
+
+
+        cv.cvtColor(
+
+            frame,
+
+            gray,
+
+            cv.COLOR_RGBA2GRAY
+
+        );
+
+
+        /* ==============================================
+           DETECT ORB
+           ============================================== */
+
+        const keypoints =
+            new cv.KeyPointVector();
+
+
+        const descriptors =
+            new cv.Mat();
+
+
+        liveOrb.detectAndCompute(
+
+            gray,
+
+            new cv.Mat(),
+
+            keypoints,
+
+            descriptors
+
+        );
+
+
+        let bestPhoto=null;
+
+        let bestMatches=0;
+
+
+        /* ==============================================
+           COMPARE WITH REFERENCE PHOTOS
+           ============================================== */
+
+        if(
+            !descriptors.empty()
+        ){
+
+            for(
+                const reference
+                of referencePhotos
+            ){
+
+                const matcher =
+                    new cv.BFMatcher(
+                        cv.NORM_HAMMING,
+                        false
+                    );
+
+
+                const matches =
+                    new cv.DMatchVectorVector();
+
+
+                matcher.knnMatch(
+
+                    reference.descriptors,
+
+                    descriptors,
+
+                    matches,
+
+                    2
+
+                );
+
+
+                let goodMatches=0;
+
+
+                for(
+                    let i=0;
+                    i<matches.size();
+                    i++
+                ){
+
+                    const pair =
+                        matches.get(i);
+
+
+                    if(
+                        pair.size()>=2
+                    ){
+
+                        const first =
+                            pair.get(0);
+
+
+                        const second =
+                            pair.get(1);
+
+
+                        if(
+                            first.distance <
+                            MATCH_RATIO*
+                            second.distance
+                        ){
+
+                            goodMatches++;
+
+                        }
+
+                    }
+
+                }
+
+
+                /*
+                   Keep strongest photo.
+                */
+
+                if(
+                    goodMatches>
+                    bestMatches
+                ){
+
+                    bestMatches=
+                        goodMatches;
+
+                    bestPhoto=
+                        reference;
+
+                }
+
+
+                matches.delete();
+
+                matcher.delete();
+
+
+                /*
+                   Excellent match:
+                   stop checking remaining photos.
+                */
+
+                if(
+                    bestMatches>=40
+                ){
+
+                    break;
+
+                }
+
+            }
+
+        }
+
+
+        /* ==============================================
+           MATCH CONFIRMATION
+           ============================================== */
+
+        if(
+            bestPhoto &&
+            bestMatches>=REQUIRED_MATCHES
+        ){
+
+            if(
+                candidateId===
+                bestPhoto.id
+            ){
+
+                candidateCount++;
+
+            }
+            else{
+
+                candidateId=
+                    bestPhoto.id;
+
+                candidateCount=1;
+
+            }
+
+
+            statusText.innerText=
+                bestPhoto.id+
+                " detected: "+
+                bestMatches+
+                " matches ("+
+                candidateCount+
+                "/"+
+                REQUIRED_CONFIRMATIONS+
+                ")";
+
+        }
+
+        else{
+
+            candidateId=null;
+
+            candidateCount=0;
+
+
+            statusText.innerText=
+                "Scanning... Point camera at a photo.";
+
+        }
+
+
+        /* ==============================================
+           OPEN VIDEO
+           ============================================== */
+
+        const now =
+            Date.now();
+
+
+        if(
+
+            bestPhoto &&
+
+            bestMatches>=
+                REQUIRED_MATCHES &&
+
+            candidateCount>=
+                REQUIRED_CONFIRMATIONS &&
+
+            now-lastDetectionTime>
+                DETECTION_COOLDOWN
+
+        ){
+
+            lastDetectionTime=now;
+
+
+            recognizePhoto(
+
+                bestPhoto,
+
+                bestMatches
+
+            );
+
+        }
+
+
+        /* ==============================================
+           RELEASE MEMORY
+           ============================================== */
+
+        frame.delete();
+
+        gray.delete();
+
+        keypoints.delete();
+
+        descriptors.delete();
+
+
+    }
+    catch(error){
+
+        console.error(
+            "SCAN ERROR:",
+            error
+        );
+
+    }
+
+
+    /* ==============================================
+       CONTINUE SCANNING
+       ============================================== */
+
+    if(
+        scannerRunning &&
+        !videoPlaying
+    ){
+
+        requestAnimationFrame(
+            scanFrame
+        );
+
+    }
+
+}
+
+
+/* =========================================================
+   PHOTO RECOGNIZED
+   ========================================================= */
+
+function recognizePhoto(
+    photo,
+    goodMatches
+){
+
+    console.log(
+        "PHOTO RECOGNIZED:",
+        photo.id,
+        goodMatches
+    );
+
+
+    playVideo(
+        photo.video
+    );
+
+}
+
+
+/* =========================================================
+   PLAY VIDEO
+   ========================================================= */
+
+async function playVideo(videoUrl){
+
+    /*
+       Stop scanner.
+    */
+
+    videoPlaying=true;
+
+    scannerRunning=false;
+
+
+    /*
+       Stop camera completely.
+    */
+
+    if(
+        camera.srcObject
+    ){
+
+        camera.srcObject
+            .getTracks()
+            .forEach(
+                track=>{
+                    track.stop();
+                }
+            );
+
+        camera.srcObject=null;
+
+    }
+
+
+    /*
+       Show video container.
+    */
+
+    videoContainer.style.display=
+        "flex";
+
+
+    soundPanel.style.display=
+        "none";
+
+
+    /*
+       Load video.
+    */
+
+    videoPlayer.src=
+        videoUrl;
+
+
+    videoPlayer.muted=false;
+
+
+    videoPlayer.load();
+
+
+    /*
+       Try autoplay with sound.
+    */
+
+    try{
+
+        await videoPlayer.play();
+
+    }
+    catch(error){
+
+        console.log(
+            "Autoplay with sound blocked."
+        );
+
+
+        /*
+           Try muted autoplay.
+        */
+
+        videoPlayer.muted=true;
+
+
+        try{
+
+            await videoPlayer.play();
+
+
+            soundPanel.style.display=
+                "block";
+
+        }
+        catch(secondError){
+
+            console.error(
+                "VIDEO PLAY ERROR:",
+                secondError
+            );
+
+        }
+
+    }
+
+
+    /*
+       Automatically close
+       after video finishes.
+    */
+
+    videoPlayer.onended=
+        function(){
+
+            closeVideo();
+
+        };
+
+}
+
+
+/* =========================================================
+   ENABLE SOUND
+   ========================================================= */
+
+function enableSound(){
+
+    videoPlayer.muted=false;
+
+
+    soundPanel.style.display=
+        "none";
+
+
+    videoPlayer
+        .play()
+        .catch(
+            error=>{
+
+                console.error(
+                    "Sound enable error:",
+                    error
+                );
+
+            }
+        );
+
+}
+
+
+/* =========================================================
+   CLOSE VIDEO
+   ========================================================= */
+
+function closeVideo(){
+
+    console.log(
+        "CLOSE BUTTON PRESSED"
+    );
+
+
+    /* ==============================================
+       STOP VIDEO
+       ============================================== */
+
+    videoPlayer.pause();
+
+
+    videoPlayer.removeAttribute(
+        "src"
+    );
+
+
+    videoPlayer.load();
+
+
+    /* ==============================================
+       HIDE VIDEO
+       ============================================== */
+
+    videoContainer.style.display=
+        "none";
+
+
+    soundPanel.style.display=
+        "none";
+
+
+    /* ==============================================
+       RESET VIDEO STATE
+       ============================================== */
+
+    videoPlaying=false;
+
+    scannerRunning=false;
+
+
+    /* ==============================================
+       RESET DETECTION
+       ============================================== */
+
+    candidateId=null;
+
+    candidateCount=0;
+
+
+    /*
+       Prevent the same photo from opening
+       immediately again.
+    */
+
+    lastDetectionTime=
+        Date.now();
+
+
+    /* ==============================================
+       UPDATE UI
+       ============================================== */
+
+    startButton.disabled=false;
+
+    startButton.innerText=
+        "START SCANNER";
+
+
+    statusText.innerText=
+        "Ready. Point camera at PHOTO.";
+
+
+    /* ==============================================
+       START CAMERA AGAIN
+       ============================================== */
+
+    setTimeout(
+
+        function(){
+
+            startScanner();
+
+        },
+
+        500
+
+    );
+
+}
+
+
+/* =========================================================
+   PAGE LOAD
+   ========================================================= */
+
+window.addEventListener(
+
+    "load",
+
+    function(){
+
+        /*
+           Get HTML elements.
+        */
+
+        camera=
+            document.getElementById(
+                "camera"
+            );
+
+
+        canvas=
+            document.getElementById(
+                "canvas"
+            );
+
+
+        context=
+            canvas.getContext(
+                "2d"
+            );
+
+
+        statusText=
+            document.getElementById(
+                "status"
+            );
+
+
+        startButton=
+            document.getElementById(
+                "startButton"
+            );
+
+
+        videoContainer=
+            document.getElementById(
+                "videoContainer"
+            );
+
+
+        videoPlayer=
+            document.getElementById(
+                "videoPlayer"
+            );
+
+
+        soundPanel=
+            document.getElementById(
+                "soundPanel"
+            );
+
+
+        /*
+           Wait for OpenCV.
+        */
+
+        const checkOpenCV=
+            setInterval(
+
+                function(){
+
+                    if(
+
+                        typeof cv!=="undefined" &&
+                        cv.Mat
+
+                    ){
+
+                        clearInterval(
+                            checkOpenCV
+                        );
+
+
+                        onOpenCvReady();
+
+                    }
+
+                },
+
+                300
+
+            );
+
+    }
+
+);
+
+</script>
+
+</body>
+
+</html>
